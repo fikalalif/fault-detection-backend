@@ -31,10 +31,9 @@ dataset_fault/
 *.tar.gz
 *.7z
 
+# Output (hide generated PNG images)
+output/*.png
+
 # OS files
 .DS_Store
 Thumbs.db
-
-output/
-*.png
-
