@@ -3,8 +3,9 @@ import segmentation_models_pytorch as smp
 from torchvision import transforms
 from PIL import Image
 from pathlib import Path
+import numpy as np
+import cv2
 
-# device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # load model
@@ -14,19 +15,38 @@ model = smp.Unet(
     classes=1,
     encoder_weights=None
 )
-model.load_state_dict(torch.load("models/unet_resnet34.pth", map_location=device))
+model.load_state_dict(torch.load("models/unet_resnet34_final.pth", map_location=device))
 model.to(device)
 model.eval()
 
-# preprocessing transform
+# preprocessing with normalization
 preprocess = transforms.Compose([
     transforms.Resize((256, 256)),
     transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225])
 ])
 
-def predict_mask(image_path: str, save_path: str = None):
+def clean_mask(mask_np, min_area=50):
+    mask_np = (mask_np * 255).astype(np.uint8)
+    contours, _ = cv2.findContours(mask_np, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    cleaned = np.zeros_like(mask_np)
+    for cnt in contours:
+        if cv2.contourArea(cnt) > min_area:
+            cv2.drawContours(cleaned, [cnt], -1, 255, -1)
+    return cleaned
+
+def overlay_mask(image_pil, mask_np, color=(255, 0, 0), alpha=0.5):
+    image = np.array(image_pil.convert("RGB"))
+    mask = (mask_np > 0).astype(np.uint8)
+    overlay = image.copy()
+    overlay[mask == 1] = color
+    blended = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
+    return Image.fromarray(blended)
+
+def predict_mask(image_path: str, save_dir: str = "output", threshold: float = 0.5):
     """
-    Run inference on one image
+    Run inference pada satu gambar dan simpan mask + overlay
     """
     img = Image.open(image_path).convert("RGB")
     input_tensor = preprocess(img).unsqueeze(0).to(device)
@@ -34,13 +54,19 @@ def predict_mask(image_path: str, save_path: str = None):
     with torch.no_grad():
         pred = model(input_tensor)
         pred = torch.sigmoid(pred)
-        pred_mask = (pred > 0.5).float().cpu().squeeze(0).squeeze(0)  # shape HxW
+        pred_mask = (pred > threshold).float().cpu().squeeze().numpy()
 
-    # convert to PIL
-    mask_img = transforms.ToPILImage()(pred_mask)
+    # resize mask ke ukuran asli
+    mask_resized = cv2.resize(pred_mask, img.size, interpolation=cv2.INTER_NEAREST)
+    cleaned = clean_mask(mask_resized, min_area=100)
+    overlay_img = overlay_mask(img, cleaned)
 
-    if save_path:
-        Path(save_path).parent.mkdir(parents=True, exist_ok=True)
-        mask_img.save(save_path)
+    # simpan hasil
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
+    mask_path = Path(save_dir) / "mask.png"
+    overlay_path = Path(save_dir) / "overlay.png"
 
-    return mask_img
+    Image.fromarray(cleaned).save(mask_path)
+    overlay_img.save(overlay_path)
+
+    return str(mask_path), str(overlay_path)
