@@ -35,5 +35,6 @@ dataset_fault/
 .DS_Store
 Thumbs.db
 
-*output/
+output/
+*.png
 
