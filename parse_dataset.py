@@ -18,8 +18,8 @@ print("\nContoh train data:")
 print(train_df.head())
 
 # save ke CSV biar gampang dibaca lagi
-train_df.to_csv("train.csv", index=False)
-val_df.to_csv("validation.csv", index=False)
-test_df.to_csv("test.csv", index=False)
+train_df.to_csv("result_parsing/train.csv", index=False)
+val_df.to_csv("result_parsing/validation.csv", index=False)
+test_df.to_csv("result_parsing/test.csv", index=False)
 
 print("\n✅ Data berhasil diparse dan disimpan ke CSV")

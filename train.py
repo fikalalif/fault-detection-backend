@@ -20,8 +20,8 @@ CHECKPOINT_DIR.mkdir(exist_ok=True)
 # ===============================
 # Load CSV
 # ===============================
-train_df = pd.read_csv("train.csv")
-val_df   = pd.read_csv("validation.csv")
+train_df = pd.read_csv("result_parsing/train.csv")
+val_df   = pd.read_csv("result_parsing/validation.csv")
 
 def fix_path(path_str):
     filename = path_str.split("\\")[-1]
