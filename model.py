@@ -8,20 +8,20 @@ import cv2
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# load model
-model = smp.Unet(
-    encoder_name="resnet34",
+# Load model (DeepLabv3+)
+model = smp.DeepLabV3Plus(
+    encoder_name="resnet50",
     in_channels=3,
     classes=1,
     encoder_weights=None
 )
-model.load_state_dict(torch.load("models/unet_resnet34_final.pth", map_location=device))
+model.load_state_dict(torch.load("checkpoints/deeplabv3plus_resnet50_epoch40.pth", map_location=device))
 model.to(device)
 model.eval()
 
-# preprocessing with normalization
+# Preprocessing
 preprocess = transforms.Compose([
-    transforms.Resize((256, 256)),
+    transforms.Resize((512, 512)),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406],
                          std=[0.229, 0.224, 0.225])
@@ -45,9 +45,6 @@ def overlay_mask(image_pil, mask_np, color=(255, 0, 0), alpha=0.5):
     return Image.fromarray(blended)
 
 def predict_mask(image_path: str, save_dir: str = "output", threshold: float = 0.5):
-    """
-    Run inference pada satu gambar dan simpan mask + overlay
-    """
     img = Image.open(image_path).convert("RGB")
     input_tensor = preprocess(img).unsqueeze(0).to(device)
 
