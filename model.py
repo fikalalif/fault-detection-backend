@@ -10,12 +10,12 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Load model (DeepLabv3+)
 model = smp.DeepLabV3Plus(
-    encoder_name="resnet50",
+    encoder_name="resnet101",
     in_channels=3,
     classes=1,
     encoder_weights=None
 )
-model.load_state_dict(torch.load("checkpoints/deeplabv3plus_resnet50_epoch40.pth", map_location=device))
+model.load_state_dict(torch.load("models/deeplabv3plus_resnet101_final.pth", map_location=device))
 model.to(device)
 model.eval()
 
