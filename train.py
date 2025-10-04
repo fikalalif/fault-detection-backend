@@ -3,7 +3,6 @@ from pathlib import Path
 from torch.utils.data import DataLoader
 import torch
 import segmentation_models_pytorch as smp
-from segmentation_models_pytorch.utils import metrics as smp_metrics
 from dataset_class import FaultDataset
 from tqdm import tqdm
 import torchvision.transforms as T
@@ -27,6 +26,9 @@ LOG_PATH = Path("training_log.csv")
 CHECKPOINT_DIR.mkdir(exist_ok=True)
 SAMPLES_DIR.mkdir(exist_ok=True)
 MODEL_DIR.mkdir(exist_ok=True)
+
+# path ke checkpoint (ubah sesuai file kamu)
+RESUME_FROM = CHECKPOINT_DIR / "deeplabv3plus_resnet101_epoch40.pth"
 
 # ===============================
 # Load CSV
@@ -94,7 +96,6 @@ def combined_loss(pred, target):
 optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 scaler = torch.amp.GradScaler("cuda")
 
-# Scheduler
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
     optimizer, factor=0.5, patience=3
 )
@@ -102,18 +103,13 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
 # ===============================
 # Metrics
 # ===============================
-# ===============================
-# Metrics (manual IoU & Dice)
-# ===============================
 def calc_metrics(pred, target, threshold=0.5):
-    # pastikan target ada channel
     if target.dim() == 3:
         target = target.unsqueeze(1)
 
     prob = torch.sigmoid(pred)
     pred_bin = (prob > threshold).float()
 
-    # flatten
     pred_flat = pred_bin.view(-1)
     target_flat = target.view(-1)
 
@@ -124,40 +120,44 @@ def calc_metrics(pred, target, threshold=0.5):
 
     return float(iou), float(dice)
 
-
 # ===============================
-# Utils
+# Resume Checkpoint
 # ===============================
-def visualize_prediction(img, mask, pred, epoch, idx):
-    img_np  = img.permute(1, 2, 0).cpu().numpy()
-    mask_np = mask.squeeze().cpu().numpy()
-    pred_np = torch.sigmoid(pred).squeeze().cpu().numpy()
-    pred_bin = (pred_np > 0.5).astype(np.uint8)
+start_epoch = 1
+best_val_loss = float("inf")
+no_improve = 0
 
-    fig, axs = plt.subplots(1, 4, figsize=(16, 4))
-    axs[0].imshow(img_np); axs[0].set_title("Input")
-    axs[1].imshow(mask_np, cmap="gray"); axs[1].set_title("Ground Truth")
-    axs[2].imshow(pred_np, cmap="magma"); axs[2].set_title("Pred (Prob)")
-    axs[3].imshow(img_np); axs[3].imshow(pred_bin, cmap="Reds", alpha=0.4); axs[3].set_title("Overlay")
-    for ax in axs: ax.axis("off")
+if RESUME_FROM.exists():
+    checkpoint = torch.load(RESUME_FROM, map_location=device)
 
-    save_path = SAMPLES_DIR / f"epoch{epoch}_sample{idx}.png"
-    plt.savefig(save_path)
-    plt.close()
+    if isinstance(checkpoint, dict) and "model" in checkpoint:
+        # ✅ format baru
+        print(f"🔄 Loading FULL checkpoint from {RESUME_FROM}")
+        model.load_state_dict(checkpoint["model"])
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        scaler.load_state_dict(checkpoint["scaler"])
+        scheduler.load_state_dict(checkpoint["scheduler"])
+        start_epoch = checkpoint["epoch"] + 1
+        best_val_loss = checkpoint["best_val_loss"]
+    else:
+        # ✅ format lama (hanya bobot model)
+        print(f"🔄 Loading model weights only from {RESUME_FROM}")
+        model.load_state_dict(checkpoint)
+        start_epoch = 21   # <<-- karena lu udah stop di epoch 20
+        best_val_loss = float("inf")
+else:
+    print("⚡ Training from scratch")
+
 
 # ===============================
 # Training Loop
 # ===============================
-best_val_loss = float("inf")
-no_improve = 0
-
-# log CSV header
 if not LOG_PATH.exists():
     with open(LOG_PATH, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["epoch", "train_loss", "val_loss", "IoU", "Dice"])
 
-for epoch in range(1, EPOCHS+1):
+for epoch in range(start_epoch, EPOCHS+1):
     # ---- Train ----
     model.train()
     train_loss = 0
@@ -194,7 +194,6 @@ for epoch in range(1, EPOCHS+1):
     avg_val_iou = val_iou / len(val_loader)
     avg_val_dice = val_dice / len(val_loader)
 
-    # Scheduler step
     scheduler.step(avg_val_loss)
 
     print(f"📌 Epoch {epoch}/{EPOCHS} - "
@@ -202,12 +201,11 @@ for epoch in range(1, EPOCHS+1):
           f"Val Loss: {avg_val_loss:.4f} | "
           f"IoU: {avg_val_iou:.4f} | Dice: {avg_val_dice:.4f}")
 
-    # save log
     with open(LOG_PATH, "a", newline="") as f:
         writer = csv.writer(f)
         writer.writerow([epoch, avg_train_loss, avg_val_loss, avg_val_iou, avg_val_dice])
 
-    # ---- Early Stopping & Save Best ----
+    # ---- Early Stopping ----
     if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
         no_improve = 0
@@ -222,20 +220,12 @@ for epoch in range(1, EPOCHS+1):
     # ---- Save checkpoint tiap 5 epoch ----
     if epoch % 5 == 0:
         ckpt_path = CHECKPOINT_DIR / f"deeplabv3plus_resnet101_epoch{epoch}.pth"
-        torch.save(model.state_dict(), ckpt_path)
+        torch.save({
+            "epoch": epoch,
+            "model": model.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "scaler": scaler.state_dict(),
+            "scheduler": scheduler.state_dict(),
+            "best_val_loss": best_val_loss
+        }, ckpt_path)
         print(f"💾 Checkpoint saved: {ckpt_path}")
-
-    # ---- Visualize tiap 5 epoch ----
-    if epoch % 5 == 0:
-        imgs, masks = next(iter(val_loader))
-        imgs, masks = imgs.to(device), masks.to(device)
-        with torch.no_grad():
-            preds = model(imgs)
-        for i in range(min(2, imgs.size(0))):
-            visualize_prediction(imgs[i], masks[i], preds[i], epoch, i)
-
-# ===============================
-# Save Final Model
-# ===============================
-torch.save(model.state_dict(), MODEL_DIR / "deeplabv3plus_resnet101_final.pth")
-print("✅ Training done, model saved")

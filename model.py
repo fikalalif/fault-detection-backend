@@ -15,17 +15,18 @@ model = smp.DeepLabV3Plus(
     classes=1,
     encoder_weights=None
 )
-model.load_state_dict(torch.load("models/deeplabv3plus_resnet101_final.pth", map_location=device))
+checkpoint = torch.load("checkpoints/deeplabv3plus_resnet101_epoch40.pth", map_location=device)
+model.load_state_dict(checkpoint["model"])  # ✅ ambil hanya state_dict model
 model.to(device)
 model.eval()
 
 # Preprocessing
+# Preprocessing (samakan dengan train/test)
 preprocess = transforms.Compose([
     transforms.Resize((512, 512)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
+    transforms.ToTensor()
 ])
+
 
 def clean_mask(mask_np, min_area=50):
     mask_np = (mask_np * 255).astype(np.uint8)
