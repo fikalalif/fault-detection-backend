@@ -28,7 +28,7 @@ SAMPLES_DIR.mkdir(exist_ok=True)
 MODEL_DIR.mkdir(exist_ok=True)
 
 # path ke checkpoint (ubah sesuai file kamu)
-RESUME_FROM = CHECKPOINT_DIR / "deeplabv3plus_resnet101_epoch40.pth"
+RESUME_FROM = CHECKPOINT_DIR / "deeplabv3plus_resnet101_epoch25.pth"
 
 # ===============================
 # Load CSV
