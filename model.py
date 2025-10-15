@@ -15,7 +15,7 @@ model = smp.DeepLabV3Plus(
     classes=1,
     encoder_weights=None
 )
-checkpoint = torch.load("checkpoints/deeplabv3plus_resnet101_epoch40.pth", map_location=device)
+checkpoint = torch.load("checkpoints/deeplabv3plus_resnet101_epoch30.pth", map_location=device)
 model.load_state_dict(checkpoint["model"])  # ✅ ambil hanya state_dict model
 model.to(device)
 model.eval()

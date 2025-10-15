@@ -30,3 +30,5 @@ async def predict(file: UploadFile = File(...)):
         "mask_path": mask_path,
         "overlay_path": overlay_path
     }
+
+#jalankan dengan uvicorn app:app --reload
